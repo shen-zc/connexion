@@ -63,6 +63,11 @@ class FlaskApp(AbstractApp):
 
     def add_api(self, specification, **kwargs):
         api = super().add_api(specification, **kwargs)
+        # 为了区分 connexion 注册的API与view层注册的API
+        options = kwargs.get('options', None)
+        if options:
+            blueprint_name = options.get('name', '')
+        api.blueprint.name = blueprint_name
         self.app.register_blueprint(api.blueprint)
         return api
 
