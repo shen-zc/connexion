@@ -30,13 +30,16 @@ class FlaskApi(AbstractAPI):
         """ Create default SecurityHandlerFactory to create all security check handlers """
         return FlaskSecurityHandlerFactory(pass_context_arg_name)
 
-    def _set_base_path(self, base_path):
+    def _set_base_path(self, base_path, name):
         super()._set_base_path(base_path)
-        self._set_blueprint()
+        self._set_blueprint(name)
 
-    def _set_blueprint(self):
+    def _set_blueprint(self, name):
         logger.debug('Creating API blueprint: %s', self.base_path)
-        endpoint = flask_utils.flaskify_endpoint(self.base_path)
+        if name:
+            endpoint = name
+        else:
+            endpoint = flask_utils.flaskify_endpoint(self.base_path)
         self.blueprint = flask.Blueprint(endpoint, __name__, url_prefix=self.base_path,
                                          template_folder=str(self.options.openapi_console_ui_from_dir))
 
@@ -286,7 +289,8 @@ class InternalHandlers:
         :return:
         """
         openapi_json_route_name = "{blueprint}.{prefix}_openapi_json"
-        escaped = flask_utils.flaskify_endpoint(self.base_path)
+        # escaped = flask_utils.flaskify_endpoint(self.base_path)
+        escaped = flask_utils.flaskify_endpoint('connexion_blueprint')
         openapi_json_route_name = openapi_json_route_name.format(
             blueprint=escaped,
             prefix=escaped

@@ -90,7 +90,6 @@ def check_view_funcs(app: connexion.FlaskApp):
         # 除此之外，目前还不能对结构vo参数的位置和结构进行比较
         # 参数位置和结构的校验，需要在实时运行中，通过connexion的validator进行比较
 
-
     return
 
 
@@ -136,7 +135,7 @@ connexion_app = connexion.FlaskApp(__name__)
 options = {"strict_validation": True, "name": CONNEXION_BLUEPRINT_NAME}
 
 # connexion_api = connexion_app.add_api('openapi.yaml', strict_validation=True, options=options)
-connexion_api = connexion_app.add_api('openapi.yaml', options=options)
+connexion_api = connexion_app.add_api('openapi.yaml', base_path='/fuck', options=options)
 
 connexion_app.app.register_blueprint(blueprint)
 
