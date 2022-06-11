@@ -6,9 +6,7 @@ and functionality shared between Swagger 2 and OpenAPI 3 specifications.
 import abc
 import logging
 
-from connexion.operations.secure import SecureOperation
-
-from ..decorators.metrics import UWSGIMetricsCollector
+from ..decorators.decorator import RequestResponseDecorator
 from ..decorators.parameter import parameter_to_arg
 from ..decorators.produces import BaseSerializer, Produces
 from ..decorators.response import ResponseValidator
@@ -26,7 +24,7 @@ VALIDATOR_MAP = {
 }
 
 
-class AbstractOperation(SecureOperation, metaclass=abc.ABCMeta):
+class AbstractOperation(metaclass=abc.ABCMeta):
 
     """
     An API routes requests to an Operation by a (path, method) pair.
@@ -45,7 +43,6 @@ class AbstractOperation(SecureOperation, metaclass=abc.ABCMeta):
                 serious_business(stuff)
     """
     def __init__(self, api, method, path, operation, resolver,
-                 app_security=None, security_schemes=None,
                  validate_responses=False, strict_validation=False,
                  randomize_endpoint=None, validator_map=None,
                  pythonic_params=False, uri_parser_class=None,
@@ -88,8 +85,6 @@ class AbstractOperation(SecureOperation, metaclass=abc.ABCMeta):
         self._path = path
         self._operation = operation
         self._resolver = resolver
-        self._security = app_security
-        self._security_schemes = security_schemes
         self._validate_responses = validate_responses
         self._strict_validation = strict_validation
         self._pythonic_params = pythonic_params
@@ -105,6 +100,10 @@ class AbstractOperation(SecureOperation, metaclass=abc.ABCMeta):
 
         self._validator_map = dict(VALIDATOR_MAP)
         self._validator_map.update(validator_map or {})
+
+    @property
+    def api(self):
+        return self._api
 
     @property
     def method(self):
@@ -191,18 +190,21 @@ class AbstractOperation(SecureOperation, metaclass=abc.ABCMeta):
                            function_arguments, has_kwargs, sanitize):
         res = {}
         for key, value in query_arguments.items():
-            key = sanitize(key)
-            if not has_kwargs and key not in function_arguments:
-                logger.debug("Query Parameter '%s' not in function arguments", key)
+            sanitized_key = sanitize(key)
+            if not has_kwargs and sanitized_key not in function_arguments:
+                logger.debug("Query Parameter '%s' (sanitized: '%s') not in function arguments",
+                             key, sanitized_key)
             else:
-                logger.debug("Query Parameter '%s' in function arguments", key)
+                logger.debug("Query Parameter '%s' (sanitized: '%s') in function arguments",
+                             key, sanitized_key)
                 try:
                     query_defn = query_defns[key]
                 except KeyError:  # pragma: no cover
-                    logger.error(f"Function argument '{key}' not defined in specification")
+                    logger.error("Function argument '%s' (non-sanitized: %s) not defined in specification",
+                                 sanitized_key, key)
                 else:
                     logger.debug('%s is a %s', key, query_defn)
-                    res.update({key: self._get_val_from_param(value, query_defn)})
+                    res.update({sanitized_key: self._get_val_from_param(value, query_defn)})
         return res
 
     @abc.abstractmethod
@@ -374,18 +376,20 @@ class AbstractOperation(SecureOperation, metaclass=abc.ABCMeta):
         uri_parsing_decorator = self._uri_parsing_decorator
         function = uri_parsing_decorator(function)
 
-        # NOTE: the security decorator should be applied last to check auth before anything else :-)
-        security_decorator = self.security_decorator
-        logger.debug('... Adding security decorator (%r)', security_decorator)
-        function = security_decorator(function)
-
         function = self._request_response_decorator(function)
 
-        if UWSGIMetricsCollector.is_available():  # pragma: no cover
-            decorator = UWSGIMetricsCollector(self.path, self.method)
-            function = decorator(function)
-
         return function
+
+    @property
+    def _request_response_decorator(self):
+        """
+        Guarantees that instead of the internal representation of the
+        operation handler response
+        (connexion.lifecycle.ConnexionRequest) a framework specific
+        object is returned.
+        :rtype: types.FunctionType
+        """
+        return RequestResponseDecorator(self.api, self.get_mimetype())
 
     @property
     def __content_type_decorator(self):

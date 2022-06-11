@@ -3,7 +3,8 @@ import datetime
 import uuid
 
 from connexion import NoContent, ProblemException, context, request
-from flask import jsonify, redirect
+from connexion.exceptions import OAuthProblem
+from flask import jsonify, redirect, send_file
 
 
 class DummyClass:
@@ -96,7 +97,7 @@ def with_problem():
     raise ProblemException(type='http://www.example.com/error',
                            title='Some Error',
                            detail='Something went wrong somewhere',
-                           status=418,
+                           status=402,
                            instance='instance1',
                            headers={'x-Test-Header': 'In Test'})
 
@@ -104,7 +105,7 @@ def with_problem():
 def with_problem_txt():
     raise ProblemException(title='Some Error',
                            detail='Something went wrong somewhere',
-                           status=418,
+                           status=402,
                            instance='instance1')
 
 
@@ -330,6 +331,10 @@ def test_required_param(simple):
     return simple
 
 
+def test_cookie_param():
+    return {"cookie_value": request.cookies["test_cookie"]}
+
+
 def test_exploded_deep_object_param(id):
     return id
 
@@ -402,6 +407,9 @@ def test_nullable_param_put(contents):
         return 'it was None'
     return contents
 
+def test_nullable_param_put_noargs(dummy=''):
+    return 'hello'
+
 
 def test_custom_json_response():
     return {'theResult': DummyClass()}, 200
@@ -456,7 +464,13 @@ def optional_auth(**kwargs):
         return "Authenticated"
 
 
+def auth_exception():
+    return 'foo'
+
 def test_args_kwargs(*args, **kwargs):
+    return kwargs
+
+def test_args_kwargs_post(*args, **kwargs):
     return kwargs
 
 
@@ -474,7 +488,7 @@ def test_param_sanitization3(query=None, body=None):
     if query:
         result['query'] = query
     if body:
-        result['form'] = body["form"]
+        result['form'] = body["$form"]
     return result
 
 
@@ -559,6 +573,10 @@ def jwt_info(token):
     return None
 
 
+def apikey_exception(token):
+    raise OAuthProblem()
+
+
 def get_add_operation_on_http_methods_only():
     return ""
 
@@ -605,3 +623,11 @@ def get_uuid():
 
 def test_optional_headers():
     return {}, 200
+
+
+def nullable_default(test):
+    return
+
+
+def get_streaming_response():
+    return send_file(__file__)

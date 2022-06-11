@@ -6,51 +6,53 @@ import abc
 import copy
 import json
 import pathlib
+import pkgutil
 from collections.abc import Mapping
 from urllib.parse import urlsplit
 
 import jinja2
 import jsonschema
-import pkg_resources
 import yaml
 from jsonschema import Draft4Validator
 from jsonschema.validators import extend as extend_validator
 
 from .exceptions import InvalidSpecification
-from .json_schema import resolve_refs
+from .json_schema import NullableTypeValidator, resolve_refs
 from .operations import OpenAPIOperation, Swagger2Operation
 from .utils import deep_get
 
 validate_properties = Draft4Validator.VALIDATORS["properties"]
 
 
-def validate_defaults(validator, properties, instance, schema):
-    """Validate `properties` subschema.
+def create_spec_validator(spec: dict) -> Draft4Validator:
+    """Create a Validator to validate an OpenAPI spec against the OpenAPI schema.
 
-    Enforcing each default value validates against the schema in which it resides.
+    :param spec: specification to validate
     """
-    valid = True
-    for error in validate_properties(
-        validator, properties, instance, schema,
-    ):
-        valid = False
-        yield error
+    # Create an instance validator, which validates defaults against the spec itself instead of
+    # against the OpenAPI schema.
+    InstanceValidator = extend_validator(Draft4Validator, {'type': NullableTypeValidator})
+    instance_validator = InstanceValidator(spec)
 
-    # Validate default only when the subschema has validated successfully
-    # and only when an instance validator is available.
-    if not valid or not hasattr(validator, 'instance_validator'):
-        return
-    if isinstance(instance, dict) and 'default' in instance:
-        for error in validator.instance_validator.iter_errors(
-            instance['default'],
-            instance
-        ):
+    def validate_defaults(validator, properties, instance, schema):
+        """Validation function to validate the `properties` subschema, enforcing each default
+        value validates against the schema in which it resides.
+        """
+        valid = True
+        for error in validate_properties(validator, properties, instance, schema):
+            valid = False
             yield error
 
+        # Validate default only when the subschema has validated successfully
+        if not valid:
+            return
+        if isinstance(instance, dict) and 'default' in instance:
+            for error in instance_validator.evolve(schema=instance).iter_errors(instance['default']):
+                yield error
 
-OpenApiValidator = extend_validator(
-    Draft4Validator, {"properties": validate_defaults},
-)
+    SpecValidator = extend_validator(Draft4Validator, {"properties": validate_defaults})
+    return SpecValidator
+
 
 NO_SPEC_VERSION_ERR_MSG = """Unable to get the spec version.
 You are missing either '"swagger": "2.0"' or '"openapi": "3.0.0"'
@@ -83,8 +85,8 @@ class Specification(Mapping):
         """ validate spec against schema
         """
         try:
+            OpenApiValidator = create_spec_validator(spec)
             validator = OpenApiValidator(cls.openapi_schema)
-            validator.instance_validator = Draft4Validator(spec)
             validator.validate(spec)
         except jsonschema.exceptions.ValidationError as e:
             raise InvalidSpecification.create_from(e)
@@ -204,8 +206,9 @@ class Swagger2Specification(Specification):
     yaml_name = 'swagger.yaml'
     operation_cls = Swagger2Operation
 
-    schema_string = pkg_resources.resource_string('connexion', 'resources/schemas/v2.0/schema.json')
-    openapi_schema = json.loads(schema_string.decode('utf-8'))
+    openapi_schema = json.loads(
+        pkgutil.get_data('connexion', 'resources/schemas/v2.0/schema.json')
+    )
 
     @classmethod
     def _set_defaults(cls, spec):
@@ -256,8 +259,9 @@ class OpenAPISpecification(Specification):
     yaml_name = 'openapi.yaml'
     operation_cls = OpenAPIOperation
 
-    schema_string = pkg_resources.resource_string('connexion', 'resources/schemas/v3.0/schema.json')
-    openapi_schema = json.loads(schema_string.decode('utf-8'))
+    openapi_schema = json.loads(
+        pkgutil.get_data('connexion', 'resources/schemas/v3.0/schema.json')
+    )
 
     @classmethod
     def _set_defaults(cls, spec):

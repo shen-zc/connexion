@@ -8,12 +8,14 @@ import pathlib
 from decimal import Decimal
 from types import FunctionType  # NOQA
 
+import a2wsgi
 import flask
 import werkzeug.exceptions
 from flask import json, signals
 
 from ..apis.flask_api import FlaskApi
 from ..exceptions import ProblemException
+from ..middleware import ConnexionMiddleware
 from ..problem import problem
 from .abstract import AbstractApp
 
@@ -21,7 +23,16 @@ logger = logging.getLogger('connexion.app')
 
 
 class FlaskApp(AbstractApp):
-    def __init__(self, import_name, server='flask', **kwargs):
+
+    def __init__(self, import_name, server='flask', extra_files=None, **kwargs):
+        """
+        :param extra_files: additional files to be watched by the reloader, defaults to the swagger specs of added apis
+        :type extra_files: list[str | pathlib.Path], optional
+
+        See :class:`~connexion.AbstractApp` for additional parameters.
+        """
+        self.extra_files = extra_files or []
+
         super().__init__(import_name, FlaskApi, server=server, **kwargs)
 
     def create_app(self):
@@ -30,6 +41,16 @@ class FlaskApp(AbstractApp):
         app.url_map.converters['float'] = NumberConverter
         app.url_map.converters['int'] = IntegerConverter
         return app
+
+    def _apply_middleware(self, middlewares):
+        middlewares = [*middlewares,
+                       a2wsgi.WSGIMiddleware]
+        middleware = ConnexionMiddleware(self.app.wsgi_app, middlewares=middlewares)
+
+        # Wrap with ASGI to WSGI middleware for usage with development server and test client
+        self.app.wsgi_app = a2wsgi.ASGIMiddleware(middleware)
+
+        return middleware
 
     def get_root_path(self):
         return pathlib.Path(self.app.root_path)
@@ -64,15 +85,24 @@ class FlaskApp(AbstractApp):
     def add_api(self, specification, **kwargs):
         api = super().add_api(specification, **kwargs)
         self.app.register_blueprint(api.blueprint)
+        if isinstance(specification, (str, pathlib.Path)):
+            self.extra_files.append(self.specification_dir / specification)
         return api
 
     def add_error_handler(self, error_code, function):
         # type: (int, FunctionType) -> None
         self.app.register_error_handler(error_code, function)
 
-    def run(self, port=None, server=None, debug=None, host=None, **options):  # pragma: no cover
+    def run(self,
+            port=None,
+            server=None,
+            debug=None,
+            host=None,
+            extra_files=None,
+            **options):  # pragma: no cover
         """
         Runs the application on a local development server.
+
         :param host: the host interface to bind on.
         :type host: str
         :param port: port to listen to
@@ -81,6 +111,8 @@ class FlaskApp(AbstractApp):
         :type server: str | None
         :param debug: include debugging information
         :type debug: bool
+        :param extra_files: additional files to be watched by the reloader.
+        :type extra_files: Iterable[str | pathlib.Path]
         :param options: options to be forwarded to the underlying server
         """
         # this functions is not covered in unit tests because we would effectively testing the mocks
@@ -99,9 +131,13 @@ class FlaskApp(AbstractApp):
         if debug is not None:
             self.debug = debug
 
+        if extra_files is not None:
+            self.extra_files.extend(extra_files)
+
         logger.debug('Starting %s HTTP server..', self.server, extra=vars(self))
         if self.server == 'flask':
-            self.app.run(self.host, port=self.port, debug=self.debug, **options)
+            self.app.run(self.host, port=self.port, debug=self.debug,
+                         extra_files=self.extra_files, **options)
         elif self.server == 'tornado':
             try:
                 import tornado.httpserver
@@ -124,6 +160,12 @@ class FlaskApp(AbstractApp):
             http_server.serve_forever()
         else:
             raise Exception(f'Server {self.server} not recognized')
+
+    def __call__(self, scope, receive, send):  # pragma: no cover
+        """
+        ASGI interface. Calls the middleware wrapped around the wsgi app.
+        """
+        return self.middleware(scope, receive, send)
 
 
 class FlaskJSONEncoder(json.JSONEncoder):

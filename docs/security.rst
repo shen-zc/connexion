@@ -19,8 +19,8 @@ field that is either a space-separated list or an array of scopes belonging to
 the supplied token. This list of scopes will be validated against the scopes
 required by the API security definition to determine if the user is authorized.
 You can supply a custom scope validation func with ``x-scopeValidateFunc``
-or set ``SCOPEVALIDATE_FUNC`` env var, otherwise
-``connexion.decorators.security.validate_scope`` will be used as default.
+or set ``SCOPEVALIDATE_FUNC`` env var, otherwise default scope validation function
+``connexion.security.security_handler_factory.validate_scope`` will be used automatically.
 
 
 The recommended approach is to return a dict which complies with
@@ -57,11 +57,7 @@ Basic Authentication
 With Connexion, the API security definition **must** include a
 ``x-basicInfoFunc`` or set ``BASICINFO_FUNC`` env var. It uses the same
 semantics as for ``x-tokenInfoFunc``, but the function accepts three
-parameters: username, password and required_scopes. If the security declaration
-of the operation also has an oauth security requirement, required_scopes is
-taken from there, otherwise it's None. This allows authorizing individual
-operations with `oauth scope`_ while using basic authentication for
-authentication.
+parameters: username, password and required_scopes.
 
 You can find a `minimal Basic Auth example application`_ in Connexion's "examples" folder.
 

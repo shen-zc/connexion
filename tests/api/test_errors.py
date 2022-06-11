@@ -27,7 +27,6 @@ def test_errors(problem_app):
     error405 = json.loads(get_greeting.data.decode('utf-8', 'replace'))
     assert error405['type'] == 'about:blank'
     assert error405['title'] == 'Method Not Allowed'
-    assert error405['detail'] == 'The method is not allowed for the requested URL.'
     assert error405['status'] == 405
     assert 'instance' not in error405
 
@@ -44,23 +43,23 @@ def test_errors(problem_app):
 
     get_problem = app_client.get('/v1.0/problem')  # type: flask.Response
     assert get_problem.content_type == 'application/problem+json'
-    assert get_problem.status_code == 418
+    assert get_problem.status_code == 402
     assert get_problem.headers['x-Test-Header'] == 'In Test'
     error_problem = json.loads(get_problem.data.decode('utf-8', 'replace'))
     assert error_problem['type'] == 'http://www.example.com/error'
     assert error_problem['title'] == 'Some Error'
     assert error_problem['detail'] == 'Something went wrong somewhere'
-    assert error_problem['status'] == 418
+    assert error_problem['status'] == 402
     assert error_problem['instance'] == 'instance1'
 
     get_problem2 = app_client.get('/v1.0/other_problem')  # type: flask.Response
     assert get_problem2.content_type == 'application/problem+json'
-    assert get_problem2.status_code == 418
+    assert get_problem2.status_code == 402
     error_problem2 = json.loads(get_problem2.data.decode('utf-8', 'replace'))
     assert error_problem2['type'] == 'about:blank'
     assert error_problem2['title'] == 'Some Error'
     assert error_problem2['detail'] == 'Something went wrong somewhere'
-    assert error_problem2['status'] == 418
+    assert error_problem2['status'] == 402
     assert error_problem2['instance'] == 'instance1'
 
     problematic_json = app_client.get(
